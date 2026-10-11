@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         洛谷首页自定义 Banner + Bilibili 单视频/合集自动播放 V39
+// @name         洛谷首页自定义 Banner + Bilibili 单视频/合集断点续播 V40
 // @namespace    https://www.luogu.com.cn/
-// @version      39.0
-// @description  洛谷首页自定义 Banner，支持 Bilibili 普通视频/合集自动播放与精确断点续播
+// @version      40.0
+// @description  洛谷首页自定义 Banner，支持 Bilibili 普通视频/合集自动播放、断点续播
 // @match        https://www.luogu.com.cn/
 // @match        https://www.luogu.com.cn/*
 // @match        https://player.bilibili.com/player.html*
@@ -16,8 +16,9 @@
 
     'use strict';
 
+
     /************************************************************
-     * Bilibili iframe
+     * Bilibili iframe 部分
      ************************************************************/
 
     if (
@@ -25,11 +26,21 @@
         location.pathname === '/player.html'
     ) {
 
-        console.log('[洛谷 Banner V39] Bilibili iframe 监听器启动');
+        console.log(
+            '[洛谷 Banner V40] Bilibili iframe 监听器启动'
+        );
 
-        const hookedVideos = new WeakSet();
+
+        const hookedVideos =
+            new WeakSet();
+
 
         let pendingResumeTime = null;
+
+
+        /*
+         * 给 video 设置断点。
+         */
 
         function applyResume(video) {
 
@@ -40,7 +51,10 @@
                 return;
             }
 
-            const duration = Number(video.duration);
+
+            const duration =
+                Number(video.duration);
+
 
             if (
                 !Number.isFinite(duration) ||
@@ -49,209 +63,455 @@
                 return;
             }
 
-            let t = pendingResumeTime;
+
+            let t =
+                pendingResumeTime;
+
 
             pendingResumeTime = null;
 
-            if (t >= duration - 2) {
+
+            /*
+             * 如果已经接近视频结尾，
+             * 不要卡在最后一秒。
+             */
+
+            if (
+                t >= duration - 2
+            ) {
+
                 t = 0;
+
             } else {
-                t = Math.min(t, duration - 1);
+
+                t =
+                    Math.min(
+                        t,
+                        duration - 1
+                    );
+
             }
+
 
             try {
 
                 video.currentTime = t;
 
+
                 console.log(
-                    '[洛谷 Banner V39] 已恢复到',
+                    '[洛谷 Banner V40] 已恢复到',
                     Math.floor(t),
                     '秒'
                 );
 
-                window.parent.postMessage({
-                    type: 'luogu-bilibili-resumed',
-                    currentTime: t
-                }, '*');
+
+                window.parent.postMessage(
+                    {
+                        type:
+                            'luogu-bilibili-resumed',
+
+                        currentTime:
+                            t
+
+                    },
+                    '*'
+                );
 
             } catch (e) {
 
-                console.error(
-                    '[洛谷 Banner V39] 恢复播放位置失败',
-                    e
-                );
+                /*
+                 * 如果此时 video 仍然不能 seek，
+                 * 再把时间放回去，等待下一次 canplay。
+                 */
+
+                pendingResumeTime = t;
 
             }
 
         }
 
-        window.addEventListener('message', event => {
 
-            if (
-                event.origin !==
-                'https://www.luogu.com.cn'
-            ) {
-                return;
+        /********************************************************
+         * 父页面 -> iframe
+         ********************************************************/
+
+        window.addEventListener(
+            'message',
+            event => {
+
+                /*
+                 * 只接受洛谷页面。
+                 */
+
+                if (
+                    event.origin !==
+                    'https://www.luogu.com.cn'
+                ) {
+                    return;
+                }
+
+
+                const data =
+                    event.data;
+
+
+                if (
+                    !data ||
+                    typeof data !== 'object'
+                ) {
+                    return;
+                }
+
+
+                if (
+                    data.type !==
+                    'luogu-bilibili-resume'
+                ) {
+                    return;
+                }
+
+
+                pendingResumeTime =
+                    Number(
+                        data.currentTime
+                    ) || 0;
+
+
+                console.log(
+                    '[洛谷 Banner V40] 收到恢复时间：',
+                    Math.floor(
+                        pendingResumeTime
+                    ),
+                    '秒'
+                );
+
+
+                const video =
+                    document.querySelector(
+                        'video'
+                    );
+
+
+                if (video) {
+
+                    applyResume(
+                        video
+                    );
+
+                }
+
             }
+        );
 
-            const data = event.data;
 
-            if (
-                !data ||
-                typeof data !== 'object'
-            ) {
-                return;
-            }
-
-            if (
-                data.type !==
-                'luogu-bilibili-resume'
-            ) {
-                return;
-            }
-
-            pendingResumeTime =
-                Number(data.currentTime) || 0;
-
-            console.log(
-                '[洛谷 Banner V39] 收到恢复时间：',
-                Math.floor(pendingResumeTime),
-                '秒'
-            );
-
-            const video =
-                document.querySelector('video');
-
-            if (video) {
-                applyResume(video);
-            }
-
-        });
+        /********************************************************
+         * 监听 video
+         ********************************************************/
 
         function hookVideo() {
 
             const videos =
-                document.querySelectorAll('video');
+                document.querySelectorAll(
+                    'video'
+                );
+
 
             if (!videos.length) {
                 return;
             }
 
-            videos.forEach(video => {
 
-                if (hookedVideos.has(video)) {
+            videos.forEach(
+                video => {
 
-                    applyResume(video);
-
-                    return;
-                }
-
-                hookedVideos.add(video);
-
-                console.log(
-                    '[洛谷 Banner V39] 找到 video'
-                );
-
-                video.addEventListener(
-                    'loadedmetadata',
-                    () => applyResume(video)
-                );
-
-                video.addEventListener(
-                    'durationchange',
-                    () => applyResume(video)
-                );
-
-                video.addEventListener(
-                    'canplay',
-                    () => applyResume(video)
-                );
-
-                window.parent.postMessage({
-                    type: 'luogu-bilibili-ready'
-                }, '*');
-
-                video.addEventListener(
-                    'ended',
-                    () => {
-
-                        console.log(
-                            '[洛谷 Banner V39] video ended'
-                        );
-
-                        window.parent.postMessage({
-                            type:
-                                'luogu-bilibili-ended'
-                        }, '*');
-
-                    }
-                );
-
-                let lastReport = 0;
-
-                function reportProgress() {
-
-                    const now = Date.now();
+                    /*
+                     * 已经监听过的 video。
+                     */
 
                     if (
-                        now - lastReport < 1800
-                    ) {
-                        return;
-                    }
-
-                    lastReport = now;
-
-                    if (
-                        !Number.isFinite(
-                            video.currentTime
+                        hookedVideos.has(
+                            video
                         )
                     ) {
+
+                        /*
+                         * 如果之前还有断点没设置，
+                         * 再尝试一次。
+                         */
+
+                        applyResume(
+                            video
+                        );
+
                         return;
+
                     }
 
-                    window.parent.postMessage({
-                        type:
-                            'luogu-bilibili-progress',
 
-                        currentTime:
-                            video.currentTime,
+                    hookedVideos.add(
+                        video
+                    );
 
-                        duration:
-                            video.duration
-                    }, '*');
+
+                    console.log(
+                        '[洛谷 Banner V40] 找到 video'
+                    );
+
+
+                    /********************************************
+                     * 恢复断点
+                     ********************************************/
+
+                    video.addEventListener(
+                        'loadedmetadata',
+                        () => {
+
+                            applyResume(
+                                video
+                            );
+
+                        }
+                    );
+
+
+                    video.addEventListener(
+                        'durationchange',
+                        () => {
+
+                            applyResume(
+                                video
+                            );
+
+                        }
+                    );
+
+
+                    video.addEventListener(
+                        'canplay',
+                        () => {
+
+                            applyResume(
+                                video
+                            );
+
+                        }
+                    );
+
+
+                    video.addEventListener(
+                        'loadeddata',
+                        () => {
+
+                            applyResume(
+                                video
+                            );
+
+                        }
+                    );
+
+
+                    /********************************************
+                     * 告诉父页面：
+                     * video 已经找到
+                     ********************************************/
+
+                    window.parent.postMessage(
+                        {
+                            type:
+                                'luogu-bilibili-ready'
+                        },
+                        '*'
+                    );
+
+
+                    /********************************************
+                     * 播放结束
+                     ********************************************/
+
+                    video.addEventListener(
+                        'ended',
+                        () => {
+
+                            console.log(
+                                '[洛谷 Banner V40] video ended'
+                            );
+
+
+                            window.parent.postMessage(
+                                {
+                                    type:
+                                        'luogu-bilibili-ended'
+                                },
+                                '*'
+                            );
+
+                        }
+                    );
+
+
+                    /********************************************
+                     * 播放进度
+                     ********************************************/
+
+                    let lastReport = 0;
+
+
+                    function reportProgress(
+                        force = false
+                    ) {
+
+                        const now =
+                            Date.now();
+
+
+                        if (
+                            !force &&
+                            now - lastReport < 1800
+                        ) {
+                            return;
+                        }
+
+
+                        lastReport =
+                            now;
+
+
+                        if (
+                            !Number.isFinite(
+                                video.currentTime
+                            )
+                        ) {
+                            return;
+                        }
+
+
+                        window.parent.postMessage(
+                            {
+                                type:
+                                    'luogu-bilibili-progress',
+
+                                currentTime:
+                                    video.currentTime,
+
+                                duration:
+                                    video.duration,
+
+                                force
+
+                            },
+                            '*'
+                        );
+
+                    }
+
+
+                    /*
+                     * 正常播放。
+                     */
+
+                    video.addEventListener(
+                        'timeupdate',
+                        () => {
+
+                            reportProgress(
+                                false
+                            );
+
+                        }
+                    );
+
+
+                    /*
+                     * 暂停时强制保存。
+                     */
+
+                    video.addEventListener(
+                        'pause',
+                        () => {
+
+                            reportProgress(
+                                true
+                            );
+
+                        }
+                    );
+
+
+                    /*
+                     * ended 前再保存一次。
+                     */
+
+                    video.addEventListener(
+                        'ended',
+                        () => {
+
+                            reportProgress(
+                                true
+                            );
+
+                        }
+                    );
+
+
+                    /*
+                     * 定时保存。
+                     */
+
+                    const progressTimer =
+                        setInterval(
+                            () => {
+
+                                /*
+                                 * video 被移除后，
+                                 * 不再继续报告。
+                                 */
+
+                                if (
+                                    !document.contains(
+                                        video
+                                    )
+                                ) {
+
+                                    clearInterval(
+                                        progressTimer
+                                    );
+
+                                    return;
+
+                                }
+
+
+                                reportProgress(
+                                    false
+                                );
+
+                            },
+                            2000
+                        );
 
                 }
-
-                video.addEventListener(
-                    'timeupdate',
-                    reportProgress
-                );
-
-                video.addEventListener(
-                    'pause',
-                    reportProgress
-                );
-
-                video.addEventListener(
-                    'ended',
-                    reportProgress
-                );
-
-                setInterval(
-                    reportProgress,
-                    2000
-                );
-
-            });
+            );
 
         }
 
+
         hookVideo();
+
+
+        /*
+         * Bilibili 播放器内部 video
+         * 有可能动态替换，所以持续检查。
+         */
 
         const observer =
             new MutationObserver(
-                hookVideo
+                () => {
+
+                    hookVideo();
+
+                }
             );
+
 
         observer.observe(
             document.documentElement,
@@ -261,17 +521,25 @@
             }
         );
 
+
         setInterval(
             hookVideo,
             500
         );
 
+
         return;
+
     }
 
 
     /************************************************************
-     * 配置
+     * 洛谷页面
+     ************************************************************/
+
+
+    /************************************************************
+     * 图片
      ************************************************************/
 
     const images = [
@@ -287,22 +555,35 @@
     ];
 
 
-    /*
-     * 只需要修改这里。
-     *
-     * 可以是：
-     *
-     * 1. 合集中的 BV
-     * 2. 普通 BV
-     */
+    /************************************************************
+     * Bilibili 入口 BV
+     ************************************************************/
 
     const BILIBILI_ENTRY_BVID =
-        'BV1XqQ1BLE5g';
+        'BV1DYPQzxEt7';
 
+
+    /************************************************************
+     * 断点 Key
+     ************************************************************/
 
     const PROGRESS_KEY =
+        'luogu_banner_bilibili_progress_v40';
+
+
+    /*
+     * V39 的存档。
+     *
+     * 升级 V40 时自动迁移。
+     */
+
+    const LEGACY_PROGRESS_KEY =
         'luogu_banner_bilibili_progress_v39';
 
+
+    /************************************************************
+     * Banner 设置
+     ************************************************************/
 
     const IMAGE_DURATION =
         5000;
@@ -318,27 +599,52 @@
 
     let root = null;
 
+
     let currentIndex = 0;
+
 
     let playlist = [];
 
+
     let playlistIndex = 0;
+
 
     let collectionLoaded = false;
 
+
     let isCollection = false;
+
 
     let loadingCollection = false;
 
+
     let timer = null;
+
 
     let videoGeneration = 0;
 
+
     let videoEnded = false;
+
 
     let resumeTime = 0;
 
+
     let currentPlayingBvid = null;
+
+
+    /*
+     * 当前 Bilibili iframe。
+     */
+
+    let currentIframe = null;
+
+
+    /*
+     * 当前 iframe 的 message 监听器。
+     */
+
+    let currentMessageHandler = null;
 
 
     /************************************************************
@@ -348,7 +654,7 @@
     function log(...args) {
 
         console.log(
-            '[洛谷 Banner V39]',
+            '[洛谷 Banner V40]',
             ...args
         );
 
@@ -358,7 +664,7 @@
     function error(...args) {
 
         console.error(
-            '[洛谷 Banner V39]',
+            '[洛谷 Banner V40]',
             ...args
         );
 
@@ -369,7 +675,10 @@
 
         return new Promise(
             resolve =>
-                setTimeout(resolve, ms)
+                setTimeout(
+                    resolve,
+                    ms
+                )
         );
 
     }
@@ -389,23 +698,43 @@
             return;
         }
 
+
+        const time =
+            Number(
+                currentTime
+            );
+
+
+        if (
+            !Number.isFinite(time) ||
+            time < 0
+        ) {
+            return;
+        }
+
+
         const data = {
 
             bvid,
 
             index:
-                playlist.indexOf(bvid),
+                playlist.indexOf(
+                    bvid
+                ),
 
             currentTime:
-                Number(currentTime) || 0,
+                time,
 
             duration:
-                Number(duration) || 0,
+                Number(
+                    duration
+                ) || 0,
 
             time:
                 Date.now()
 
         };
+
 
         try {
 
@@ -417,7 +746,7 @@
         } catch (e) {
 
             error(
-                '保存进度失败',
+                '保存播放进度失败：',
                 e
             );
 
@@ -426,21 +755,58 @@
     }
 
 
+    /************************************************************
+     * 读取进度
+     ************************************************************/
+
     function loadProgress() {
 
         try {
 
-            const raw =
+            let raw =
                 localStorage.getItem(
                     PROGRESS_KEY
                 );
+
+
+            /*
+             * V40 没有存档，
+             * 尝试读取 V39。
+             */
+
+            if (!raw) {
+
+                raw =
+                    localStorage.getItem(
+                        LEGACY_PROGRESS_KEY
+                    );
+
+
+                if (raw) {
+
+                    localStorage.setItem(
+                        PROGRESS_KEY,
+                        raw
+                    );
+
+
+                    log(
+                        '已自动迁移 V39 断点记录'
+                    );
+
+                }
+
+            }
+
 
             if (!raw) {
                 return false;
             }
 
+
             const data =
                 JSON.parse(raw);
+
 
             if (
                 !data ||
@@ -449,9 +815,10 @@
                 return false;
             }
 
-            /*
-             * 合集模式。
-             */
+
+            /****************************************************
+             * 合集模式
+             ****************************************************/
 
             if (isCollection) {
 
@@ -460,33 +827,68 @@
                         data.bvid
                     );
 
+
                 if (pos >= 0) {
 
-                    playlistIndex = pos;
+                    playlistIndex =
+                        pos;
+
 
                     resumeTime =
                         Number(
                             data.currentTime
                         ) || 0;
 
+
                     currentPlayingBvid =
                         data.bvid;
 
+
                     log(
-                        '恢复合集位置：',
-                        `${pos + 1}/${playlist.length}`,
-                        data.bvid,
-                        `${Math.floor(resumeTime)}s`
+                        '================================'
                     );
 
+
+                    log(
+                        '恢复合集断点成功'
+                    );
+
+
+                    log(
+                        '位置：',
+                        `${pos + 1}/${playlist.length}`
+                    );
+
+
+                    log(
+                        'BV：',
+                        data.bvid
+                    );
+
+
+                    log(
+                        '时间：',
+                        Math.floor(
+                            resumeTime
+                        ) + 's'
+                    );
+
+
+                    log(
+                        '================================'
+                    );
+
+
                     return true;
+
                 }
 
             }
 
-            /*
-             * 普通单视频。
-             */
+
+            /****************************************************
+             * 普通视频
+             ****************************************************/
 
             if (
                 !isCollection &&
@@ -498,50 +900,152 @@
                     BILIBILI_ENTRY_BVID
                 ];
 
+
                 playlistIndex = 0;
+
 
                 resumeTime =
                     Number(
                         data.currentTime
                     ) || 0;
 
+
                 currentPlayingBvid =
                     data.bvid;
 
+
                 log(
-                    '恢复普通视频：',
-                    data.bvid,
-                    `${Math.floor(resumeTime)}s`
+                    '================================'
                 );
 
+
+                log(
+                    '恢复普通视频断点'
+                );
+
+
+                log(
+                    'BV：',
+                    data.bvid
+                );
+
+
+                log(
+                    '时间：',
+                    Math.floor(
+                        resumeTime
+                    ) + 's'
+                );
+
+
+                log(
+                    '================================'
+                );
+
+
                 return true;
+
             }
 
         } catch (e) {
 
             error(
-                '读取进度失败',
+                '读取播放进度失败：',
                 e
             );
 
         }
+
 
         return false;
 
     }
 
 
+    /************************************************************
+     * 清除断点
+     ************************************************************/
+
     function clearProgress() {
 
-        localStorage.removeItem(
-            PROGRESS_KEY
-        );
+        try {
+
+            localStorage.removeItem(
+                PROGRESS_KEY
+            );
+
+            localStorage.removeItem(
+                LEGACY_PROGRESS_KEY
+            );
+
+        } catch (e) {}
+
 
         log(
             '播放进度已清除'
         );
 
     }
+
+
+    /************************************************************
+     * 页面关闭 / 刷新保存
+     ************************************************************/
+
+    function saveBeforeLeave() {
+
+        if (
+            !currentPlayingBvid
+        ) {
+            return;
+        }
+
+
+        if (
+            !Number.isFinite(
+                Number(resumeTime)
+            )
+        ) {
+            return;
+        }
+
+
+        saveProgress(
+            currentPlayingBvid,
+            resumeTime,
+            0
+        );
+
+
+        log(
+            '页面即将离开，保存最后断点：',
+            currentPlayingBvid,
+            Math.floor(
+                resumeTime
+            ) + 's'
+        );
+
+    }
+
+
+    /*
+     * pagehide 对关闭/刷新比较可靠。
+     */
+
+    window.addEventListener(
+        'pagehide',
+        saveBeforeLeave
+    );
+
+
+    /*
+     * beforeunload 再保险一次。
+     */
+
+    window.addEventListener(
+        'beforeunload',
+        saveBeforeLeave
+    );
 
 
     /************************************************************
@@ -580,25 +1084,31 @@
                     },
 
                     onload(res) {
+
                         resolve(res);
+
                     },
 
                     onerror() {
+
                         reject(
                             new Error(
                                 '网络请求失败：\n' +
                                 url
                             )
                         );
+
                     },
 
                     ontimeout() {
+
                         reject(
                             new Error(
                                 '请求超时：\n' +
                                 url
                             )
                         );
+
                     }
 
                 });
@@ -621,11 +1131,13 @@
                 {
                     'Accept':
                         'application/json, text/plain, */*',
+
                     'Referer':
                         referer
                 },
                 'text'
             );
+
 
         if (
             res.status < 200 ||
@@ -639,7 +1151,9 @@
 
         }
 
+
         let data;
+
 
         try {
 
@@ -655,6 +1169,7 @@
             );
 
         }
+
 
         if (
             typeof data.code !==
@@ -674,21 +1189,25 @@
 
         }
 
+
         return data;
 
     }
 
 
     /************************************************************
-     * 获取视频信息
+     * 获取视频页面
      ************************************************************/
 
-    async function getVideoPage(bvid) {
+    async function getVideoPage(
+        bvid
+    ) {
 
         const url =
             'https://www.bilibili.com/video/' +
             bvid +
             '/';
+
 
         const res =
             await gmRequest(
@@ -700,10 +1219,15 @@
                 'text'
             );
 
+
         return res.responseText || '';
 
     }
 
+
+    /************************************************************
+     * 提取 MID
+     ************************************************************/
 
     function extractMid(html) {
 
@@ -717,28 +1241,41 @@
 
         ];
 
+
         for (
             const pattern of patterns
         ) {
 
             const m =
-                html.match(pattern);
+                html.match(
+                    pattern
+                );
+
 
             if (
                 m &&
                 m[1]
             ) {
+
                 return m[1];
+
             }
 
         }
+
 
         return null;
 
     }
 
 
-    function extractSeasonId(html) {
+    /************************************************************
+     * 提取 season_id
+     ************************************************************/
+
+    function extractSeasonId(
+        html
+    ) {
 
         const patterns = [
 
@@ -752,33 +1289,49 @@
 
         ];
 
+
         for (
             const pattern of patterns
         ) {
 
             const m =
-                html.match(pattern);
+                html.match(
+                    pattern
+                );
+
 
             if (
                 m &&
                 m[1]
             ) {
+
                 return m[1];
+
             }
 
         }
+
 
         return null;
 
     }
 
 
-    async function getVideoInfoAPI(bvid) {
+    /************************************************************
+     * API 视频信息
+     ************************************************************/
+
+    async function getVideoInfoAPI(
+        bvid
+    ) {
 
         const url =
             'https://api.bilibili.com/x/web-interface/view' +
             '?bvid=' +
-            encodeURIComponent(bvid);
+            encodeURIComponent(
+                bvid
+            );
+
 
         const data =
             await requestJSON(
@@ -787,6 +1340,7 @@
                 bvid +
                 '/'
             );
+
 
         if (
             !data.data ||
@@ -799,57 +1353,73 @@
 
         }
 
+
         return data.data;
 
     }
 
 
-    async function resolveVideoInfo(bvid) {
+    async function resolveVideoInfo(
+        bvid
+    ) {
 
         let html = '';
+
 
         try {
 
             html =
-                await getVideoPage(bvid);
+                await getVideoPage(
+                    bvid
+                );
 
         } catch (e) {
 
             error(
-                '视频页面读取失败',
+                '视频页面读取失败：',
                 e
             );
 
         }
+
 
         const mid =
             html
                 ? extractMid(html)
                 : null;
 
+
         const seasonId =
             html
                 ? extractSeasonId(html)
                 : null;
 
+
         if (mid) {
 
             return {
+
                 mid,
+
                 seasonId
+
             };
 
         }
+
 
         const info =
             await getVideoInfoAPI(
                 bvid
             );
 
+
         return {
 
             mid:
-                String(info.mid),
+                String(
+                    info.mid
+                ),
 
             seasonId
 
@@ -859,34 +1429,45 @@
 
 
     /************************************************************
-     * 合集 API
+     * 获取作者合集
      ************************************************************/
 
-    async function getSeasonList(mid) {
+    async function getSeasonList(
+        mid
+    ) {
 
         const result = [];
 
         let page = 1;
+
 
         while (true) {
 
             const url =
                 'https://api.bilibili.com/x/polymer/web-space/seasons_series_list' +
                 '?mid=' +
-                encodeURIComponent(mid) +
+                encodeURIComponent(
+                    mid
+                ) +
                 '&page_num=' +
                 page +
                 '&page_size=20';
 
+
             const data =
-                await requestJSON(url);
+                await requestJSON(
+                    url
+                );
+
 
             const lists =
                 data?.data?.items_lists;
 
+
             if (!lists) {
                 break;
             }
+
 
             const seasons =
                 Array.isArray(
@@ -895,17 +1476,21 @@
                     ? lists.seasons_list
                     : [];
 
+
             result.push(
                 ...seasons
             );
 
+
             const pageInfo =
                 lists.page || {};
+
 
             const total =
                 Number(
                     pageInfo.total || 0
                 );
+
 
             if (
                 !seasons.length ||
@@ -914,23 +1499,33 @@
                     page >= total
                 )
             ) {
+
                 break;
+
             }
 
+
             page++;
+
 
             if (page > 100) {
                 break;
             }
 
+
             await sleep(100);
 
         }
+
 
         return result;
 
     }
 
+
+    /************************************************************
+     * 获取合集某一页
+     ************************************************************/
 
     async function getSeasonPage(
         mid,
@@ -941,18 +1536,29 @@
         const url =
             'https://api.bilibili.com/x/polymer/web-space/seasons_archives_list' +
             '?mid=' +
-            encodeURIComponent(mid) +
+            encodeURIComponent(
+                mid
+            ) +
             '&season_id=' +
-            encodeURIComponent(seasonId) +
+            encodeURIComponent(
+                seasonId
+            ) +
             '&sort_reverse=false' +
             '&page_num=' +
             page +
             '&page_size=100';
 
-        return await requestJSON(url);
+
+        return await requestJSON(
+            url
+        );
 
     }
 
+
+    /************************************************************
+     * 获取完整合集
+     ************************************************************/
 
     async function getFullSeason(
         mid,
@@ -965,6 +1571,7 @@
 
         let total = Infinity;
 
+
         while (
             all.length < total
         ) {
@@ -976,6 +1583,7 @@
                     page
                 );
 
+
             const arr =
                 Array.isArray(
                     data?.data?.archives
@@ -983,8 +1591,10 @@
                     ? data.data.archives
                     : [];
 
+
             const pageInfo =
                 data?.data?.page || {};
+
 
             if (page === 1) {
 
@@ -994,11 +1604,13 @@
                         arr.length
                     );
 
+
                 log(
                     '发现合集：',
                     data?.data?.meta?.name ||
                     '未知合集'
                 );
+
 
                 log(
                     '合集总数：',
@@ -1007,27 +1619,36 @@
 
             }
 
+
             if (!arr.length) {
                 break;
             }
+
 
             all.push(
                 ...arr
             );
 
-            if (arr.length < 100) {
+
+            if (
+                arr.length < 100
+            ) {
                 break;
             }
 
+
             page++;
+
 
             if (page > 20) {
                 break;
             }
 
+
             await sleep(100);
 
         }
+
 
         return all;
 
@@ -1035,10 +1656,7 @@
 
 
     /************************************************************
-     * 查找合集
-     *
-     * 找不到合集时不再报错，
-     * 而是自动切换到普通单视频模式。
+     * 查找入口 BV 所属合集
      ************************************************************/
 
     async function findCollection(
@@ -1050,21 +1668,26 @@
             entryBvid
         );
 
+
         const info =
             await resolveVideoInfo(
                 entryBvid
             );
 
+
         const mid =
-            String(info.mid);
+            String(
+                info.mid
+            );
+
 
         let seasonId =
             info.seasonId;
 
 
-        /*
-         * 先检查页面直接找到的 season_id。
-         */
+        /****************************************************
+         * 先检查视频页面中的 season_id
+         ****************************************************/
 
         if (seasonId) {
 
@@ -1077,9 +1700,11 @@
                         1
                     );
 
+
                 const arr =
                     first?.data?.archives ||
                     [];
+
 
                 if (
                     arr.some(
@@ -1094,6 +1719,7 @@
                             mid,
                             seasonId
                         );
+
 
                     return {
 
@@ -1117,7 +1743,7 @@
             } catch (e) {
 
                 error(
-                    '直接读取合集失败',
+                    '直接读取合集失败：',
                     e
                 );
 
@@ -1126,9 +1752,9 @@
         }
 
 
-        /*
-         * 遍历作者合集。
-         */
+        /****************************************************
+         * 遍历作者的其他合集
+         ****************************************************/
 
         try {
 
@@ -1137,10 +1763,12 @@
                     mid
                 );
 
+
             log(
                 '作者合集数量：',
                 seasons.length
             );
+
 
             for (
                 const season of seasons
@@ -1150,13 +1778,16 @@
                     season?.meta ||
                     {};
 
+
                 const sid =
                     meta.season_id ||
                     season.season_id;
 
+
                 if (!sid) {
                     continue;
                 }
+
 
                 try {
 
@@ -1167,12 +1798,14 @@
                             1
                         );
 
+
                     const arr =
                         first?.data?.archives ||
                         [];
 
+
                     /*
-                     * 第一页找到。
+                     * 第一页直接找到。
                      */
 
                     if (
@@ -1188,6 +1821,7 @@
                                 mid,
                                 sid
                             );
+
 
                         return {
 
@@ -1209,9 +1843,10 @@
 
                     }
 
+
                     /*
-                     * 第一页没找到，
-                     * 但合集超过 100 个。
+                     * 如果合集超过 100 个，
+                     * 检查后续页面。
                      */
 
                     const total =
@@ -1220,11 +1855,13 @@
                             arr.length
                         );
 
+
                     if (
                         total > 100
                     ) {
 
                         let page = 2;
+
 
                         while (
                             page <= 20
@@ -1237,13 +1874,18 @@
                                     page
                                 );
 
+
                             const list =
                                 data?.data?.archives ||
                                 [];
 
-                            if (!list.length) {
+
+                            if (
+                                !list.length
+                            ) {
                                 break;
                             }
+
 
                             if (
                                 list.some(
@@ -1258,6 +1900,7 @@
                                         mid,
                                         sid
                                     );
+
 
                                 return {
 
@@ -1279,11 +1922,13 @@
 
                             }
 
+
                             if (
                                 list.length < 100
                             ) {
                                 break;
                             }
+
 
                             page++;
 
@@ -1314,9 +1959,8 @@
 
 
         /*
-         * 最关键的改变：
-         *
-         * 找不到合集不再抛异常。
+         * 没有合集：
+         * 返回普通单视频模式。
          */
 
         return {
@@ -1346,11 +1990,14 @@
             return true;
         }
 
+
         if (loadingCollection) {
             return false;
         }
 
+
         loadingCollection = true;
+
 
         try {
 
@@ -1359,15 +2006,16 @@
                 BILIBILI_ENTRY_BVID
             );
 
+
             const result =
                 await findCollection(
                     BILIBILI_ENTRY_BVID
                 );
 
 
-            /*
-             * 找到合集。
-             */
+            /****************************************************
+             * 合集
+             ****************************************************/
 
             if (result.found) {
 
@@ -1376,16 +2024,21 @@
                         .map(
                             x => x?.bvid
                         )
-                        .filter(Boolean);
+                        .filter(
+                            Boolean
+                        );
+
 
                 list = [
                     ...new Set(list)
                 ];
 
+
                 const start =
                     list.indexOf(
                         BILIBILI_ENTRY_BVID
                     );
+
 
                 if (start < 0) {
 
@@ -1395,8 +2048,16 @@
 
                 }
 
+
+                /*
+                 * 只播放入口 BV 之后的部分。
+                 */
+
                 playlist =
-                    list.slice(start);
+                    list.slice(
+                        start
+                    );
+
 
                 playlistIndex = 0;
 
@@ -1408,80 +2069,108 @@
 
                 collectionLoaded = true;
 
+
+                /*
+                 * 读取断点。
+                 */
+
                 loadProgress();
+
 
                 log(
                     '================================'
                 );
 
+
                 log(
                     'Bilibili 合集模式'
                 );
+
 
                 log(
                     '合集名称：',
                     result.name
                 );
 
+
                 log(
                     '完整合集数量：',
                     list.length
                 );
+
 
                 log(
                     '入口位置：',
                     start + 1
                 );
 
+
                 log(
                     '实际播放数量：',
                     playlist.length
                 );
 
+
                 log(
                     '当前 BV：',
-                    playlist[playlistIndex]
+                    playlist[
+                        playlistIndex
+                    ]
                 );
+
 
                 log(
                     '================================'
                 );
 
-            } else {
+            }
 
-                /*
-                 * 没有合集。
-                 */
+
+            /****************************************************
+             * 普通单视频
+             ****************************************************/
+
+            else {
 
                 playlist = [
                     BILIBILI_ENTRY_BVID
                 ];
 
+
                 playlistIndex = 0;
+
 
                 isCollection = false;
 
+
                 resumeTime = 0;
+
 
                 currentPlayingBvid =
                     BILIBILI_ENTRY_BVID;
 
+
                 collectionLoaded = true;
 
+
                 loadProgress();
+
 
                 log(
                     '================================'
                 );
 
+
                 log(
                     'Bilibili 普通单视频模式'
                 );
 
+
                 log(
-                    '当前 BV：',
+                    'BV：',
                     BILIBILI_ENTRY_BVID
                 );
+
 
                 log(
                     '================================'
@@ -1491,12 +2180,13 @@
 
 
             /*
-             * 如果当前正在显示 Bilibili，
-             * 重新创建播放器。
+             * 如果当前 Banner 正好是 Bilibili，
+             * 加载完成后重新创建 iframe。
              */
 
             const banners =
                 getBanners();
+
 
             if (
                 banners[currentIndex]?.type ===
@@ -1507,6 +2197,7 @@
 
             }
 
+
             return true;
 
         } catch (e) {
@@ -1516,10 +2207,12 @@
                 e
             );
 
+
             showErrorMessage(
                 'Bilibili 加载失败：\n\n' +
                 e.message
             );
+
 
             return false;
 
@@ -1533,14 +2226,17 @@
 
 
     /************************************************************
-     * Banner
+     * Banner 列表
      ************************************************************/
 
     function getBanners() {
 
         const result = [];
 
-        images.forEach(url => {
+
+        for (
+            const url of images
+        ) {
 
             result.push({
 
@@ -1550,7 +2246,8 @@
 
             });
 
-        });
+        }
+
 
         result.push({
 
@@ -1561,10 +2258,15 @@
 
         });
 
+
         return result;
 
     }
 
+
+    /************************************************************
+     * 创建自定义 Banner
+     ************************************************************/
 
     function createCarousel() {
 
@@ -1573,13 +2275,15 @@
                 '#lg-slider'
             );
 
+
         if (!old) {
             return;
         }
 
+
         if (
             document.querySelector(
-                '#luogu-custom-slider-v39'
+                '#luogu-custom-slider-v40'
             )
         ) {
 
@@ -1589,62 +2293,111 @@
 
         }
 
+
         root =
             document.createElement(
                 'div'
             );
 
+
         root.id =
-            'luogu-custom-slider-v39';
+            'luogu-custom-slider-v40';
+
 
         root.innerHTML = `
 
-            <div class="luogu-v39-stage"></div>
+            <div
+                class="luogu-v40-stage"
+            ></div>
 
             <button
-                class="luogu-v39-arrow luogu-v39-prev"
+                class="luogu-v40-arrow
+                       luogu-v40-prev"
                 type="button"
             >‹</button>
 
             <button
-                class="luogu-v39-arrow luogu-v39-next"
+                class="luogu-v40-arrow
+                       luogu-v40-next"
                 type="button"
             >›</button>
 
-            <div class="luogu-v39-dots"></div>
+            <div
+                class="luogu-v40-dots"
+            ></div>
 
         `;
 
-        old.replaceWith(root);
+
+        old.replaceWith(
+            root
+        );
+
 
         injectStyle();
 
+
         root.querySelector(
-            '.luogu-v39-prev'
+            '.luogu-v40-prev'
         ).addEventListener(
             'click',
             previousBanner
         );
 
+
         root.querySelector(
-            '.luogu-v39-next'
+            '.luogu-v40-next'
         ).addEventListener(
             'click',
             nextBanner
         );
 
+
         renderDots();
+
 
         showCurrent();
 
+
         loadBilibiliCollection();
 
+
         log(
-            'V39 Banner 创建完成'
+            'V40 Banner 创建完成'
         );
 
     }
 
+
+    /************************************************************
+     * 清理当前 iframe 监听器
+     ************************************************************/
+
+    function cleanupCurrentPlayer() {
+
+        if (
+            currentMessageHandler
+        ) {
+
+            window.removeEventListener(
+                'message',
+                currentMessageHandler
+            );
+
+            currentMessageHandler =
+                null;
+
+        }
+
+
+        currentIframe = null;
+
+    }
+
+
+    /************************************************************
+     * 显示当前 Banner
+     ************************************************************/
 
     function showCurrent() {
 
@@ -1652,24 +2405,38 @@
             return;
         }
 
+
         const banners =
             getBanners();
 
+
         clearTimer();
+
+
+        /*
+         * 删除旧 iframe 的消息监听。
+         */
+
+        cleanupCurrentPlayer();
+
 
         const stage =
             root.querySelector(
-                '.luogu-v39-stage'
+                '.luogu-v40-stage'
             );
+
 
         if (!stage) {
             return;
         }
 
+
         stage.innerHTML = '';
+
 
         const banner =
             banners[currentIndex];
+
 
         if (
             banner.type ===
@@ -1689,10 +2456,15 @@
 
         }
 
+
         updateDots();
 
     }
 
+
+    /************************************************************
+     * 图片 Banner
+     ************************************************************/
 
     function showImage(
         stage,
@@ -1704,12 +2476,19 @@
                 'img'
             );
 
+
         img.src =
             banner.url;
 
-        img.draggable = false;
 
-        stage.appendChild(img);
+        img.draggable =
+            false;
+
+
+        stage.appendChild(
+            img
+        );
+
 
         timer =
             setTimeout(
@@ -1724,14 +2503,19 @@
      * Bilibili 播放器
      ************************************************************/
 
-    function showBilibili(stage) {
+    function showBilibili(
+        stage
+    ) {
 
         videoGeneration++;
+
 
         const generation =
             videoGeneration;
 
+
         videoEnded = false;
+
 
         /*
          * 如果合集还没加载，
@@ -1740,29 +2524,57 @@
 
         const bvid =
             playlist.length
-                ? playlist[playlistIndex]
+                ? playlist[
+                    playlistIndex
+                ]
                 : BILIBILI_ENTRY_BVID;
+
+
+        /*
+         * 防止切换 Banner 时，
+         * 把旧 BV 的 resumeTime 错用到新 BV。
+         */
+
+        if (
+            currentPlayingBvid !==
+            bvid
+        ) {
+
+            resumeTime = 0;
+
+        }
+
 
         currentPlayingBvid =
             bvid;
+
 
         const wrapper =
             document.createElement(
                 'div'
             );
 
+
         wrapper.className =
-            'luogu-v39-video-wrapper';
+            'luogu-v40-video-wrapper';
+
 
         const iframe =
             document.createElement(
                 'iframe'
             );
 
+
+        currentIframe =
+            iframe;
+
+
         iframe.src =
             'https://player.bilibili.com/player.html' +
             '?bvid=' +
-            encodeURIComponent(bvid) +
+            encodeURIComponent(
+                bvid
+            ) +
             '&page=1' +
             '&autoplay=1' +
             '&danmaku=0' +
@@ -1770,50 +2582,79 @@
             '&enable_ssl=1' +
             '&crossDomain=true';
 
+
         iframe.allow =
             'autoplay; fullscreen; picture-in-picture';
 
-        iframe.allowFullscreen = true;
 
-        iframe.frameBorder = '0';
+        iframe.allowFullscreen =
+            true;
+
+
+        iframe.frameBorder =
+            '0';
+
 
         wrapper.appendChild(
             iframe
         );
+
 
         stage.appendChild(
             wrapper
         );
 
 
-        /*
-         * 恢复提示。
-         */
+        /****************************************************
+         * 恢复提示
+         ****************************************************/
 
-        if (resumeTime > 2) {
+        if (
+            resumeTime > 2
+        ) {
 
             const tip =
                 document.createElement(
                     'div'
                 );
 
+
             tip.className =
-                'luogu-v39-resume';
+                'luogu-v40-resume';
+
 
             tip.textContent =
                 '恢复播放 ' +
-                Math.floor(resumeTime) +
+                Math.floor(
+                    resumeTime
+                ) +
                 ' 秒';
 
-            wrapper.appendChild(tip);
+
+            wrapper.appendChild(
+                tip
+            );
+
 
             setTimeout(
-                () => tip.remove(),
+                () => {
+
+                    if (
+                        tip.isConnected
+                    ) {
+                        tip.remove();
+                    }
+
+                },
                 2500
             );
 
         }
 
+
+        /****************************************************
+         * 视频结束
+         ****************************************************/
 
         function ended() {
 
@@ -1824,24 +2665,36 @@
                 return;
             }
 
+
             if (videoEnded) {
                 return;
             }
 
-            videoEnded = true;
+
+            videoEnded =
+                true;
+
 
             log(
                 '检测到 Bilibili 视频播放结束：',
                 bvid
             );
 
+
+            /*
+             * 当前视频已经结束，
+             * 保存 0 只是为了防止刷新后卡在结尾。
+             */
+
             resumeTime = 0;
+
 
             saveProgress(
                 bvid,
                 0,
                 0
             );
+
 
             setTimeout(
                 () => {
@@ -1853,6 +2706,7 @@
                         return;
                     }
 
+
                     nextBilibiliVideo();
 
                 },
@@ -1862,9 +2716,12 @@
         }
 
 
-        window.addEventListener(
-            'message',
-            function handler(event) {
+        /****************************************************
+         * iframe 消息
+         ****************************************************/
+
+        currentMessageHandler =
+            function (event) {
 
                 if (
                     generation !==
@@ -1873,6 +2730,7 @@
                     return;
                 }
 
+
                 if (
                     event.origin !==
                     'https://player.bilibili.com'
@@ -1880,8 +2738,9 @@
                     return;
                 }
 
+
                 /*
-                 * 防止旧 iframe 干扰新 iframe。
+                 * 必须是当前 iframe。
                  */
 
                 if (
@@ -1891,8 +2750,10 @@
                     return;
                 }
 
+
                 const data =
                     event.data;
+
 
                 if (
                     !data ||
@@ -1903,9 +2764,9 @@
                 }
 
 
-                /*
-                 * video 已准备好。
-                 */
+                /********************************************
+                 * video 已准备
+                 ********************************************/
 
                 if (
                     data.type ===
@@ -1916,38 +2777,18 @@
                         '收到 iframe ready'
                     );
 
-                    if (
-                        resumeTime > 0
-                    ) {
 
-                        event.source.postMessage(
-                            {
-                                type:
-                                    'luogu-bilibili-resume',
+                    sendResume();
 
-                                currentTime:
-                                    resumeTime
-                            },
-                            'https://player.bilibili.com'
-                        );
-
-                        log(
-                            '发送恢复位置：',
-                            Math.floor(
-                                resumeTime
-                            ) + 's'
-                        );
-
-                    }
 
                     return;
 
                 }
 
 
-                /*
-                 * 恢复完成。
-                 */
+                /********************************************
+                 * 恢复完成
+                 ********************************************/
 
                 if (
                     data.type ===
@@ -1955,49 +2796,72 @@
                 ) {
 
                     log(
-                        '已恢复到：',
+                        '断点恢复成功：',
                         Math.floor(
                             Number(
                                 data.currentTime
                             ) || 0
-                        ) + 's'
+                        ) +
+                        's'
                     );
+
 
                     return;
 
                 }
 
 
-                /*
-                 * 播放进度。
-                 */
+                /********************************************
+                 * 播放进度
+                 ********************************************/
 
                 if (
                     data.type ===
                     'luogu-bilibili-progress'
                 ) {
 
-                    resumeTime =
+                    const t =
                         Number(
                             data.currentTime
                         ) || 0;
 
-                    saveProgress(
-                        bvid,
-                        resumeTime,
+
+                    const duration =
                         Number(
                             data.duration
-                        ) || 0
+                        ) || 0;
+
+
+                    /*
+                     * 只更新当前视频的时间。
+                     */
+
+                    if (
+                        currentPlayingBvid ===
+                        bvid
+                    ) {
+
+                        resumeTime =
+                            t;
+
+                    }
+
+
+                    saveProgress(
+                        bvid,
+                        t,
+                        duration
                     );
+
 
                     return;
 
                 }
 
 
-                /*
-                 * 播放结束。
-                 */
+                /********************************************
+                 * 播放结束
+                 ********************************************/
 
                 if (
                     data.type ===
@@ -2008,14 +2872,73 @@
 
                 }
 
-            }
+            };
+
+
+        window.addEventListener(
+            'message',
+            currentMessageHandler
         );
 
 
-        /*
-         * iframe load 后再发一次，
-         * 防止 ready 消息时序问题。
-         */
+        /****************************************************
+         * 发送恢复时间
+         ****************************************************/
+
+        function sendResume() {
+
+            if (
+                generation !==
+                videoGeneration
+            ) {
+                return;
+            }
+
+
+            if (
+                !iframe.contentWindow
+            ) {
+                return;
+            }
+
+
+            if (
+                !resumeTime ||
+                resumeTime <= 1
+            ) {
+                return;
+            }
+
+
+            try {
+
+                iframe.contentWindow.postMessage(
+                    {
+                        type:
+                            'luogu-bilibili-resume',
+
+                        currentTime:
+                            resumeTime
+                    },
+                    'https://player.bilibili.com'
+                );
+
+
+                log(
+                    '发送恢复位置：',
+                    Math.floor(
+                        resumeTime
+                    ) + 's'
+                );
+
+            } catch (e) {}
+
+        }
+
+
+        /****************************************************
+         * iframe load
+         ****************************************************/
 
         iframe.addEventListener(
             'load',
@@ -2028,52 +2951,70 @@
                     return;
                 }
 
+
                 log(
                     'Bilibili iframe 加载完成'
                 );
 
-                if (resumeTime > 0) {
 
-                    setTimeout(
-                        () => {
+                /*
+                 * 多次尝试。
+                 *
+                 * 因为 iframe load 后
+                 * video 不一定已经出现。
+                 */
 
-                            try {
+                sendResume();
 
-                                iframe.contentWindow.postMessage(
-                                    {
-                                        type:
-                                            'luogu-bilibili-resume',
 
-                                        currentTime:
-                                            resumeTime
-                                    },
-                                    'https://player.bilibili.com'
-                                );
+                setTimeout(
+                    sendResume,
+                    500
+                );
 
-                            } catch (e) {}
 
-                        },
-                        1000
-                    );
+                setTimeout(
+                    sendResume,
+                    1000
+                );
 
-                }
+
+                setTimeout(
+                    sendResume,
+                    2000
+                );
+
+
+                setTimeout(
+                    sendResume,
+                    3000
+                );
 
             }
         );
 
 
-        if (!collectionLoaded) {
+        /****************************************************
+         * 加载提示
+         ****************************************************/
+
+        if (
+            !collectionLoaded
+        ) {
 
             const loading =
                 document.createElement(
                     'div'
                 );
 
+
             loading.className =
-                'luogu-v39-loading';
+                'luogu-v40-loading';
+
 
             loading.textContent =
                 '正在读取 Bilibili 信息……';
+
 
             wrapper.appendChild(
                 loading
@@ -2094,15 +3035,20 @@
          * 普通单视频。
          */
 
-        if (!isCollection) {
+        if (
+            !isCollection
+        ) {
 
             log(
                 '普通 Bilibili 视频播放完成'
             );
 
+
             clearProgress();
 
+
             nextBanner();
+
 
             return;
 
@@ -2120,12 +3066,15 @@
 
             playlistIndex++;
 
+
             resumeTime = 0;
+
 
             currentPlayingBvid =
                 playlist[
                     playlistIndex
                 ];
+
 
             saveProgress(
                 currentPlayingBvid,
@@ -2133,16 +3082,21 @@
                 0
             );
 
+
             log(
-                `播放合集下一首：${playlistIndex + 1}/${playlist.length}`
+                '播放合集下一首：',
+                `${playlistIndex + 1}/${playlist.length}`
             );
+
 
             log(
                 'BV：',
                 currentPlayingBvid
             );
 
+
             showCurrent();
+
 
             return;
 
@@ -2150,20 +3104,26 @@
 
 
         /*
-         * 合集全部播放完毕。
+         * 整个合集播放完毕。
          */
 
         log(
             'Bilibili 合集全部播放完毕'
         );
 
+
         clearProgress();
+
 
         playlistIndex = 0;
 
+
         resumeTime = 0;
 
-        currentPlayingBvid = null;
+
+        currentPlayingBvid =
+            null;
+
 
         nextBanner();
 
@@ -2171,76 +3131,134 @@
 
 
     /************************************************************
-     * Banner 切换
+     * 下一张 Banner
      ************************************************************/
 
     function nextBanner() {
 
         clearTimer();
 
+
         const banners =
             getBanners();
 
+
         currentIndex++;
+
 
         if (
             currentIndex >=
             banners.length
         ) {
+
             currentIndex = 0;
+
         }
+
+
+        /*
+         * 切到 Bilibili 时，
+         * 重新读取断点。
+         */
 
         if (
             banners[currentIndex]?.type ===
             'bilibili'
         ) {
 
-            if (collectionLoaded) {
+            if (
+                collectionLoaded
+            ) {
+
                 loadProgress();
+
             }
 
         }
+
 
         showCurrent();
 
     }
 
+
+    /************************************************************
+     * 上一张 Banner
+     ************************************************************/
 
     function previousBanner() {
 
         clearTimer();
 
+
+        /*
+         * 切换之前先保存当前播放位置。
+         */
+
+        if (
+            currentPlayingBvid &&
+            resumeTime > 0
+        ) {
+
+            saveProgress(
+                currentPlayingBvid,
+                resumeTime,
+                0
+            );
+
+        }
+
+
         const banners =
             getBanners();
 
+
         currentIndex--;
 
-        if (currentIndex < 0) {
+
+        if (
+            currentIndex < 0
+        ) {
+
             currentIndex =
                 banners.length - 1;
+
         }
+
 
         if (
             banners[currentIndex]?.type ===
             'bilibili'
         ) {
 
-            if (collectionLoaded) {
+            if (
+                collectionLoaded
+            ) {
+
                 loadProgress();
+
             }
 
         }
+
 
         showCurrent();
 
     }
 
 
+    /************************************************************
+     * 清除图片计时器
+     ************************************************************/
+
     function clearTimer() {
 
         if (timer) {
 
-            clearTimeout(timer);
+            clearTimeout(
+                timer
+            );
+
 
             timer = null;
 
@@ -2259,15 +3277,19 @@
             return;
         }
 
+
         const box =
             root.querySelector(
-                '.luogu-v39-dots'
+                '.luogu-v40-dots'
             );
+
 
         box.innerHTML = '';
 
+
         const banners =
             getBanners();
+
 
         banners.forEach(
             (banner, index) => {
@@ -2277,10 +3299,14 @@
                         'button'
                     );
 
-                dot.type = 'button';
+
+                dot.type =
+                    'button';
+
 
                 dot.className =
-                    'luogu-v39-dot';
+                    'luogu-v40-dot';
+
 
                 dot.title =
                     banner.type ===
@@ -2288,14 +3314,36 @@
                         ? `图片 ${index + 1}`
                         : 'Bilibili';
 
+
                 dot.addEventListener(
                     'click',
                     () => {
 
+                        /*
+                         * 点击其他 Banner 前，
+                         * 保存当前 Bilibili 进度。
+                         */
+
+                        if (
+                            currentPlayingBvid &&
+                            resumeTime > 0
+                        ) {
+
+                            saveProgress(
+                                currentPlayingBvid,
+                                resumeTime,
+                                0
+                            );
+
+                        }
+
+
                         clearTimer();
+
 
                         currentIndex =
                             index;
+
 
                         if (
                             banner.type ===
@@ -2307,15 +3355,20 @@
 
                         }
 
+
                         showCurrent();
 
                     }
                 );
 
-                box.appendChild(dot);
+
+                box.appendChild(
+                    dot
+                );
 
             }
         );
+
 
         updateDots();
 
@@ -2328,9 +3381,10 @@
             return;
         }
 
+
         root
             .querySelectorAll(
-                '.luogu-v39-dot'
+                '.luogu-v40-dot'
             )
             .forEach(
                 (dot, index) => {
@@ -2351,31 +3405,41 @@
      * 错误提示
      ************************************************************/
 
-    function showErrorMessage(text) {
+    function showErrorMessage(
+        text
+    ) {
 
         if (!root) {
             return;
         }
 
+
         const stage =
             root.querySelector(
-                '.luogu-v39-stage'
+                '.luogu-v40-stage'
             );
 
+
         stage.innerHTML = '';
+
 
         const pre =
             document.createElement(
                 'pre'
             );
 
+
         pre.className =
-            'luogu-v39-api-message luogu-v39-error';
+            'luogu-v40-api-message luogu-v40-error';
+
 
         pre.textContent =
             text;
 
-        stage.appendChild(pre);
+
+        stage.appendChild(
+            pre
+        );
 
     }
 
@@ -2388,23 +3452,26 @@
 
         if (
             document.querySelector(
-                '#luogu-v39-style'
+                '#luogu-v40-style'
             )
         ) {
             return;
         }
+
 
         const style =
             document.createElement(
                 'style'
             );
 
+
         style.id =
-            'luogu-v39-style';
+            'luogu-v40-style';
+
 
         style.textContent = `
 
-            #luogu-custom-slider-v39 {
+            #luogu-custom-slider-v40 {
 
                 position: relative !important;
 
@@ -2427,8 +3494,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-stage {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-stage {
 
                 position: absolute;
 
@@ -2444,8 +3512,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-stage > img {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-stage > img {
 
                 display: block;
 
@@ -2465,8 +3534,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-video-wrapper {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-video-wrapper {
 
                 position: absolute;
 
@@ -2482,8 +3552,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-video-wrapper iframe {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-video-wrapper iframe {
 
                 display: block;
 
@@ -2495,8 +3566,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-arrow {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-arrow {
 
                 position: absolute;
 
@@ -2534,8 +3606,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-arrow:hover {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-arrow:hover {
 
                 opacity: 1;
 
@@ -2544,22 +3617,25 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-prev {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-prev {
 
                 left: 12px;
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-next {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-next {
 
                 right: 12px;
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-dots {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-dots {
 
                 position: absolute;
 
@@ -2578,8 +3654,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-dot {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-dot {
 
                 width: 8px;
 
@@ -2598,8 +3675,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-dot.active {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-dot.active {
 
                 background: #fff;
 
@@ -2608,8 +3686,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-loading {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-loading {
 
                 position: absolute;
 
@@ -2635,8 +3714,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-resume {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-resume {
 
                 position: absolute;
 
@@ -2664,8 +3744,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-api-message {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-api-message {
 
                 position: absolute;
 
@@ -2692,8 +3773,9 @@
 
             }
 
-            #luogu-custom-slider-v39
-            .luogu-v39-error {
+
+            #luogu-custom-slider-v40
+            .luogu-v40-error {
 
                 align-items:
                     flex-start;
@@ -2718,13 +3800,16 @@
 
         `;
 
-        document.head.appendChild(style);
+
+        document.head.appendChild(
+            style
+        );
 
     }
 
 
     /************************************************************
-     * 删除广告
+     * 删除题目页广告
      ************************************************************/
 
     function removeProblemAds() {
@@ -2760,36 +3845,48 @@
 
         removeProblemAds();
 
+
         const custom =
             document.querySelector(
-                '#luogu-custom-slider-v39'
+                '#luogu-custom-slider-v40'
             );
+
 
         const original =
             document.querySelector(
                 '#lg-slider'
             );
 
+
         if (custom) {
 
-            root = custom;
+            root =
+                custom;
+
 
             if (original) {
+
                 original.remove();
+
             }
+
 
             return;
 
         }
 
+
         if (original) {
+
             createCarousel();
+
         }
 
     }
 
 
     let cleaning = false;
+
 
     const observer =
         new MutationObserver(
@@ -2799,15 +3896,22 @@
                     return;
                 }
 
+
                 cleaning = true;
+
 
                 requestAnimationFrame(
                     () => {
 
                         try {
+
                             cleanAds();
+
                         } finally {
-                            cleaning = false;
+
+                            cleaning =
+                                false;
+
                         }
 
                     }
@@ -2825,7 +3929,9 @@
 
         injectStyle();
 
+
         cleanAds();
+
 
         observer.observe(
             document.documentElement,
@@ -2835,35 +3941,48 @@
             }
         );
 
+
         setInterval(
             cleanAds,
             1500
         );
 
+
         log(
             '================================'
         );
 
+
         log(
-            '洛谷 Banner V39 已启动'
+            '洛谷 Banner V40 已启动'
         );
+
 
         log(
             '入口 BV：',
             BILIBILI_ENTRY_BVID
         );
 
+
         log(
             '自动判断合集/普通视频：已开启'
         );
+
 
         log(
             '自动连播：已开启'
         );
 
+
         log(
-            '精确断点续播：已开启'
+            '关闭/刷新断点续播：已开启'
         );
+
+
+        log(
+            'V39 → V40 进度迁移：已开启'
+        );
+
 
         log(
             '================================'
